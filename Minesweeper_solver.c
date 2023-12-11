@@ -1,39 +1,52 @@
-                               #include/**/<time.h>
-                               #include <ncurses.h>
-                               # include <stdlib.h>
-             /**               */#define O()for(y-=               !!\
-           y;y<H&&           /*...Semi-Automatic.*/y<           p/W+2;\
-         y++)for(x=p%   W,x-=!!/*..MineSweeper...*/x;x<W&&   x<p%W+2;x++)
-       #define _(x,y)COLOR_##x,COLOR_##y /*  click / (R)estart / (Q)uit  */
-     #define Y(n)attrset(COLOR_PAIR(n)),mvprintw(/* IOCCC2019 or IOCCC2020 */
-   typedef int I;I*M,W,H,S,C,E,X,T,c,p,q,i,j,k;char G[]=" x",U[256];I F(I p){ I
-      r=0,x,y=p/W,q;O()q=y*W+x,r+=M[q]^=p-q?(M[q]&16)<<8:0;return r;}I K(I p
-         ,I f,I g){ I x=(g+     f/256)%16-(f+g/256)%16,y=p/W,c=0,n=g/4096
-          ,m=x==n?0:x==g           /16%16-f/16%16-n?256:-1; if(m+1)O()if
-         ((4368&M[n=y*W             +x])==4112){ M[c=1,n]=(M[n]&~16)|m; }
-        return c;}void              D(){I p,k,o=0,n=C,m=0,q=0;if(LINES-1<H
-       ||COLS/2<W)clear             (),Y(4)LINES/2,COLS/2-16,"Make the ter\
-minal bigger!");else{for           (p=0;p<S;o+=k==3,Y(k)p/W+1,p%W*2,G),p++)G[1]=""
-"_*!..12345678"[k=E?256&M[p     ]?n--,2:E-2||M[p]%2<1?M[p]&16?q=p,m++,3:4+F(p)%16:
-1:3];k=T+time(0);T=o||T>=0||E-1?T:k;k=T<0?k:T;Y(7)0,0,"%03d%*s%03d",n>999?999:n,W*
-2-6,"",k>999?999:k);Y(9)0,W-1,E>1?"X-(":E-1||o?":-)":"8-)");M[q]|=256*(n==m&&n); }
-refresh();}short B[]={_(RED,BLACK),_(WHITE,BLUE),_(GREEN,RED),_(MAGENTA,YELLOW),_(
-CYAN,RED)};I main(I A,char**V){MEVENT e;FILE*f;srand(time(0));initscr();for(start\
-_color();X<12;X++){init_pair(X+1,B[X&&X<10?X-1:2],B[X?X<3?2:1:0]);}noecho();cbreak
-();timeout(9);curs_set(0);keypad(stdscr,TRUE);for(mousemask(BUTTON1_CLICKED|BUTTO\
-N1_RELEASED,0);;){S=A<2?f=0,W=COLS/2,H=LINES-1,C=W*H/5,0:fscanf(f=fopen(V[A-1],"r"
-       ),"%d %d %d",&W,&H,&C)>3; ;S+=W*H;M=realloc(M,S*sizeof(I)*2);for(i=0
-        ;i<S;i++)!f?M[i]=i,i&&(k=M[j=rand()%i],M[j]=M[i],M[i]=k):fscanf(f,
-         "%d",M+i);if(f)fclose(f);T=E=X=0;for(clear();D(),c=getch(),c-'r'
-          &&(c-KEY_RESIZE||E);){ if(c=='q'){ return(endwin(),0); }if(c==
-        KEY_MOUSE&&getmouse(&e)==OK&&e.x/2<W&&e.y<=H){if(!e.y&&(W-2<e.x&&
-      e.x<W+2)){break;}p=e.x/2+e.y*W-W;if(p>=0){if(!E){for(i=0;i<S;i++)M[S+M
-   [i]]=i,M[i]=16+(M[i]<C);C-=M[p]&1;M[p]=16;E=1;T=-time(0);}if(E<2)M[p]&=(M[p]
-     &257)==1?T+=time(0),E=2,273:257;}}for(p=0;p<S&&E==1;M[p++]&=273){}for(i=
-       (X+S-1)%S;E==1&&i!=X;X=(X+1)%S){if(!(M[p=M[X+S]]&272)){if(K(p,c=F(p)
-         ,0)){goto N;}   for(k=p/W-2,k=k<0?0:k;k<p/W+3&&k   <H;k++)for(j=
-           p%W-2,j          =j<0?0:j;j<W&&j<p%W+3;)if           (!(M[q=
-             k*W               +j++]&272)){ if(K(p,               c,F
-                               (q))){ goto N; }F(q)
-                               ; }F(p); }}N:; } } }
-                               /*(c)Yusukse Endoh*/
+#include <stdio.h> 
+
+#define N(a)       "%"#a"$hhn"
+#define O(a,b)     "%10$"#a"d"N(b)
+#define U          "%10$.*37$d"
+#define G(a)       "%"#a"$s"
+#define H(a,b)     G(a)G(b)
+#define T(a)       a a 
+#define s(a)       T(a)T(a)
+#define A(a)       s(a)T(a)a
+#define n(a)       A(a)a
+#define D(a)       n(a)A(a)
+#define C(a)       D(a)a
+#define R          C(C(N(12)G(12)))
+#define o(a,b,c)   C(H(a,a))D(G(a))C(H(b,b)G(b))n(G(b))O(32,c)R
+#define SS         O(78,55)R "\n\033[2J\n%26$s";
+#define E(a,b,c,d) H(a,b)G(c)O(253,11)R G(11)O(255,11)R H(11,d)N(d)O(253,35)R
+#define S(a,b)     O(254,11)H(a,b)N(68)R G(68)O(255,68)N(12)H(12,68)G(67)N(67)
+
+char* fmt = O(10,39)N(40)N(41)N(42)N(43)N(66)N(69)N(24)O(22,65)O(5,70)O(8,44)N(
+            45)N(46)N    (47)N(48)N(    49)N( 50)N(     51)N(52)N(53    )O( 28,
+            54)O(5,        55) O(2,    56)O(3,57)O(      4,58 )O(13,    73)O(4,
+            71 )N(   72)O   (20,59    )N(60)N(61)N(       62)N (63)N    (64)R R
+            E(1,2,   3,13   )E(4,    5,6,13)E(7,8,9        ,13)E(1,4    ,7,13)E
+            (2,5,8,        13)E(    3,6,9,13)E(1,5,         9,13)E(3    ,5,7,13
+            )E(14,15,    16,23)    E(17,18,19,23)E(          20, 21,    22,23)E
+            (14,17,20,23)E(15,    18,21,23)E(16,19,    22     ,23)E(    14, 18,
+            22,23)E(16,18,20,    23)R U O(255 ,38)R    G (     38)O(    255,36)
+            R H(13,23)O(255,    11)R H(11,36) O(254    ,36)     R G(    36 ) O(
+            255,36)R S(1,14    )S(2,15)S(3, 16)S(4,    17 )S     (5,    18)S(6,
+            19)S(7,20)S(8,    21)S(9    ,22)H(13,23    )H(36,     67    )N(11)R
+            G(11)""O(255,    25 )R        s(C(G(11)    ))n (G(          11) )G(
+            11)N(54)R C(    "aa")   s(A(   G(25)))T    (G(25))N         (69)R o
+            (14,1,26)o(    15, 2,   27)o   (16,3,28    )o( 17,4,        29)o(18
+            ,5,30)o(19    ,6,31)o(        20,7,32)o    (21,8,33)o       (22 ,9,
+            34)n(C(U)    )N( 68)R H(    36,13)G(23)    N(11)R C(D(      G(11)))
+            D(G(11))G(68)N(68)R G(68)O(49,35)R H(13,23)G(67)N(11)R C(H(11,11)G(
+            11))A(G(11))C(H(36,36)G(36))s(G(36))O(32,58)R C(D(G(36)))A(G(36))SS
+
+#define arg d+6,d+8,d+10,d+12,d+14,d+16,d+18,d+20,d+22,0,d+46,d+52,d+48,d+24,d\
+            +26,d+28,d+30,d+32,d+34,d+36,d+38,d+40,d+50,(scanf(d+126,d+4),d+(6\
+            -2)+18*(1-d[2]%2)+d[4]*2),d,d+66,d+68,d+70, d+78,d+80,d+82,d+90,d+\
+            92,d+94,d+97,d+54,d[2],d+2,d+71,d+77,d+83,d+89,d+95,d+72,d+73,d+74\
+            ,d+75,d+76,d+84,d+85,d+86,d+87,d+88,d+100,d+101,d+96,d+102,d+99,d+\
+            67,d+69,d+79,d+81,d+91,d+93,d+98,d+103,d+58,d+60,d+98,d+126,d+127,\
+            d+128,d+129
+
+char d[538] = {1,0,10,0,10};
+
+int main() {
+    while(*d) printf(fmt, arg);
+}
