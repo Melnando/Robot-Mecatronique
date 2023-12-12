@@ -1,381 +1,346 @@
-#include "argoat.h"
-#include "configator.h"
-#include "dragonfail.h"
-#include "termbox.h"
+/*
+	Little Smalltalk -
+		main driver
 
-#include "draw.h"
-#include "inputs.h"
-#include "login.h"
-#include "utils.h"
-#include "config.h"
+		timothy a. budd
 
-#include <stdbool.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stddef.h>
-#include <string.h>
-#include <sys/time.h>
-#include <unistd.h>
-#include <stdlib.h>
+1. 	initializes various smalltalk constants and classes with
+	legitimate values.  these values, however, will for the most part
+	be overridden when the standard prelude is read in.
 
-#define ARG_COUNT 7
+2.	reads in the standard prelude, plus any additional files listed
+	on the command line.
 
-#ifndef LY_VERSION
-#define LY_VERSION "0.6.0"
-#endif
+3.	places the driver reading stdin on the process queue and starts
+	the process driver running.
+*/
+/*
+	The source code for the Little Smalltalk System may be freely
+	copied provided that the source of all files is acknowledged
+	and that this condition is copied with each file.
 
-// global
-struct lang lang;
-struct config config;
+	The Little Smalltalk System is distributed without responsibility
+	for the performance of the program and without any guarantee of
+	maintenance.
 
-// args handles
-void arg_help(void* data, char** pars, const int pars_count)
-{
-	printf("If you want to configure Ly, please check the config file, usually located at /etc/ly/config.ini.\n");
-    exit(0);
-}
+	All questions concerning Little Smalltalk should be addressed to:
 
-void arg_version(void* data, char** pars, const int pars_count)
-{
-    printf("Ly version %s\n", LY_VERSION);
-    exit(0);
-}
+		Professor Tim Budd
+		Department of Computer Science
+		Oregon State University
+		Corvallis, Oregon
+		97331
+		USA
+*/
 
-// low-level error messages
-void log_init(char** log)
-{
-	log[DGN_OK] = lang.err_dgn_oob;
-	log[DGN_NULL] = lang.err_null;
-	log[DGN_ALLOC] = lang.err_alloc;
-	log[DGN_BOUNDS] = lang.err_bounds;
-	log[DGN_DOMAIN] = lang.err_domain;
-	log[DGN_MLOCK] = lang.err_mlock;
-	log[DGN_XSESSIONS_DIR] = lang.err_xsessions_dir;
-	log[DGN_XSESSIONS_OPEN] = lang.err_xsessions_open;
-	log[DGN_PATH] = lang.err_path;
-	log[DGN_CHDIR] = lang.err_chdir;
-	log[DGN_PWNAM] = lang.err_pwnam;
-	log[DGN_USER_INIT] = lang.err_user_init;
-	log[DGN_USER_GID] = lang.err_user_gid;
-	log[DGN_USER_UID] = lang.err_user_uid;
-	log[DGN_PAM] = lang.err_pam;
-	log[DGN_HOSTNAME] = lang.err_hostname;
-}
-
-void arg_config(void* data, char** pars, const int pars_count)
-{
-	*((char **)data) = *pars;
-}
-
-// ly!
-int main(int argc, char** argv)
-{
-	// init error lib
-	log_init(dgn_init());
-
-	// load config
-	config_defaults();
-	lang_defaults();
-
-	char *config_path = NULL;
-	// parse args
-	const struct argoat_sprig sprigs[ARG_COUNT] =
-	{
-		{NULL, 0, NULL, NULL},
-		{"config", 0, &config_path, arg_config},
-		{"c", 0, &config_path, arg_config},
-		{"help", 0, NULL, arg_help},
-		{"h", 0, NULL, arg_help},
-		{"version", 0, NULL, arg_version},
-		{"v", 0, NULL, arg_version},
-	};
-
-	struct argoat args = {sprigs, ARG_COUNT, NULL, 0, 0};
-	argoat_graze(&args, argc, argv);
-
-	// init inputs
-	struct desktop desktop;
-	struct text login;
-	struct text password;
-	input_desktop(&desktop);
-	input_text(&login, config.max_login_len);
-	input_text(&password, config.max_password_len);
-
-	if (dgn_catch())
-	{
-		config_free();
-		lang_free();
-		return 1;
-	}
-
-	config_load(config_path);
-	lang_load();
-
-	void* input_structs[3] =
-	{
-		(void*) &desktop,
-		(void*) &login,
-		(void*) &password,
-	};
-
-	void (*input_handles[3]) (void*, struct tb_event*) =
-	{
-		handle_desktop,
-		handle_text,
-		handle_text,
-	};
-
-	desktop_load(&desktop);
-	load(&desktop, &login);
-
-	// start termbox
-	tb_init();
-	tb_select_output_mode(TB_OUTPUT_NORMAL);
-	tb_clear();
-
-	// init visible elements
-	struct tb_event event;
-	struct term_buf buf;
-
-	//Place the curser on the login field if there is no saved username, if there is, place the curser on the password field
-	uint8_t active_input;
-        if (config.default_input == LOGIN_INPUT && login.text != login.end){
-        	active_input = PASSWORD_INPUT;
-        }
-        else{
-        	active_input = config.default_input;
-        }
+int version = 2; /* a Kludge to get us the start of the data segment.
+			used to save and restore contexts */
 
 
-	// init drawing stuff
-	draw_init(&buf);
+# include <stdio.h>
+# include "object.h"
+# include "string.h"
+# include "symbol.h"
+# include "interp.h"
+# include "primitive.h"
 
-	// draw_box and position_input are called because they need to be
-	// called before *input_handles[active_input] for the cursor to be
-	// positioned correctly
-	draw_box(&buf);
-	position_input(&buf, &desktop, &login, &password);
-	(*input_handles[active_input])(input_structs[active_input], NULL);
+static object *null_object;	/* a totally classless object */
+static char filebase[80];	/* base for forming temp file names */
 
-	if (config.animate)
-	{
-		animate_init(&buf);
+extern int n_incs, n_decs, n_mallocs;	/* counters */
+extern int opcount[], ohcount, spcount[];
 
-		if (dgn_catch())
-		{
-			config.animate = false;
-			dgn_reset();
-		}
-	}
+extern int ca_block, ca_barray, ca_class, ca_terp, ca_int, ca_float;
+extern int ca_obj, ca_str, ca_sym, ca_wal, ca_cdict;
+extern int ca_cobj[];
+extern int btabletop, wtop;	/* more counters */
 
-	// init state info
-	int error;
-	bool run = true;
-	bool update = true;
-	bool reboot = false;
-	bool shutdown = false;
-	uint8_t auth_fails = 0;
+# ifdef INLINE
+object *_dx;		/* object pointer used for decrementing */
+# endif
 
-	switch_tty(&buf);
+int silence = 0;    	/* 1 if silence is desired on output */
+int noload = 0;     	/* 1 if no loading of standard prelude is desired */
+int debug = 0;		/* debug flag, set by a primitive call */
+int fastload = 0;	/* 1 if doing a fast load of saved image */
+int lexprnt = 0;	/* 1 if printing during lex is desired (for debug) */
+int prallocs = 0;	/* 1 if printing final allocation figures is wanted */
+int started = 0;	/* 1 if we have started reading user commands */
+int prntcmd = 1;	/* 1 or 2 and commands will be printed as evaled */
 
-	// main loop
-	while (run)
-	{
-		if (update)
-		{
-			if (auth_fails < 10)
-			{
-				(*input_handles[active_input])(input_structs[active_input], NULL);
-				tb_clear();
-				animate(&buf);
-				draw_bigclock(&buf);
-				draw_box(&buf);
-				draw_clock(&buf);
-				draw_labels(&buf);
-				if(!config.hide_key_hints)
-					draw_key_hints();
-				draw_lock_state(&buf);
-				position_input(&buf, &desktop, &login, &password);
-				draw_desktop(&desktop);
-				draw_input(&login);
-				draw_input_mask(&password);
-				update = config.animate;
-			}
-			else
-			{
-				usleep(10000);
-				update = cascade(&buf, &auth_fails);
+/* pseudo-variables */
+object *o_acollection;		/* arrayed collection (used internally) */
+object *o_drive;		/* driver interpreter */
+object *o_empty;		/* the empty array (used during initial) */
+object *o_false;		/* value for pseudo variable false */
+object *o_magnitude;		/* instance of class Magnitude */
+object *o_nil;			/* value for pseudo variable nil */
+object *o_number;		/* instance of class Number */
+object *o_object;		/* instance of class Object */
+object *o_tab;			/* string with tab only */
+object *o_true;			/* value of pseudo variable true */
+object *o_smalltalk;		/* value of pseudo variable smalltalk */
+
+/* classes to be initialized */
+extern class *Array;
+extern class *ArrayedCollection;
+
+/* input stack */
+extern FILE *fdstack[];
+extern int fdtop;
+
+/* main - main driver */
+main(argc, argv)
+int argc;
+char **argv;
+{	int i;
+	class *null_class();
+	object *tempobj;
+	FILE *sfd;
+
+# ifdef FASTDEFAULT
+	fastload = 1;
+# endif
+# ifndef FASTDEFAULT
+	fastload = 0;
+# endif
+
+	/* first check for flags */
+	for (i = 1; i < argc; i++)
+		if (argv[i][0] == '-')
+			switch(argv[i][1]) {
+				case 'f': fastload = 1; break;
+				case 'l': 		/* fall through */
+				case 'n': noload = 1; /* fall through */
+				case 'm': fastload = 0; break;
+				case 'z': lexprnt = 1; break;
 			}
 
-			tb_present();
+	if (fastload) {
+		dofast();
 		}
+	else {			/* gotta do it the hard way */
+		strcpy(filebase, TEMPFILE);
+		mktemp(filebase);
 
-		int timeout = -1;
+		byte_init();
+		class_init();
+		cdic_init();
+		int_init();
+		str_init();
+		sym_init();
+		init_objs();
 
-		if (config.animate)
-		{
-			timeout = config.min_refresh_delta;
-		}
-		else
-		{
-			struct timeval tv;
-			gettimeofday(&tv, NULL);
-			if (config.bigclock)
-				timeout = (60 - tv.tv_sec % 60) * 1000 - tv.tv_usec / 1000 + 1;
-			if (config.clock)
-				timeout = 1000 - tv.tv_usec / 1000 + 1;
-		}
+		null_object = new_obj((class *) 0, 0, 0);
 
-		if (timeout == -1)
-        {
-            error = tb_poll_event(&event);
-        }
-		else
-        {
-            error = tb_peek_event(&event, timeout);
-        }
+		sassign(o_object, null_object);
+		/* true is given a different object from others , so comparisons
+					work correctly */
+		sassign(o_true, new_obj((class *) 0, 0, 0));
+		sassign(o_false, null_object);
+		sassign(o_nil, null_object);
+		sassign(o_number, null_object);
+		sassign(o_magnitude, null_object);
+		sassign(o_empty, null_object);
+		sassign(o_smalltalk, null_object);
+		sassign(o_acollection, null_object);
 
-		if (error < 0)
-		{
-			continue;
-		}
+		sassign(Array, null_class("Array"));
+		sassign(ArrayedCollection, null_class("ArrayedCollection"));
 
-		if (event.type == TB_EVENT_KEY)
-		{
-			char shutdown_key[4];
-			memset(shutdown_key, '\0', sizeof(shutdown_key));
-			strcpy(shutdown_key, config.shutdown_key);
-			memcpy(shutdown_key, "0", 1);
+		drv_init();	/* initialize the driver */
+		sassign(o_drive, (object *) cr_interpreter((interpreter *) 0,
+			null_object, null_object, null_object, null_object));
+		init_process((interpreter *) o_drive);
 
-			char restart_key[4];
-			memset(restart_key, '\0', sizeof(restart_key));
-			strcpy(restart_key, config.restart_key);
-			memcpy(restart_key, "0", 1);
-
-			switch (event.key)
-			{
-			case TB_KEY_F1:
-			case TB_KEY_F2:
-			case TB_KEY_F3:
-			case TB_KEY_F4:
-			case TB_KEY_F5:
-			case TB_KEY_F6:
-			case TB_KEY_F7:
-			case TB_KEY_F8:
-			case TB_KEY_F9:
-			case TB_KEY_F10:
-			case TB_KEY_F11:
-			case TB_KEY_F12:
-				if( 0xFFFF - event.key + 1 == atoi(shutdown_key) )
-				{
-					shutdown = true;
-					run = false;
-				}
-				if( 0xFFFF - event.key + 1 == atoi(restart_key) )
-				{
-					reboot = true;
-					run = false;
-				}
-				break;
-			case TB_KEY_CTRL_C:
-				run = false;
-				break;
-			case TB_KEY_CTRL_U:
-				if (active_input > 0)
-				{
-					input_text_clear(input_structs[active_input]);
-					update = true;
-				}
-				break;
-			case TB_KEY_CTRL_K:
-			case TB_KEY_ARROW_UP:
-				if (active_input > 0)
-				{
-					--active_input;
-					update = true;
-				}
-				break;
-			case TB_KEY_CTRL_J:
-			case TB_KEY_ARROW_DOWN:
-				if (active_input < 2)
-				{
-					++active_input;
-					update = true;
-				}
-				break;
-			case TB_KEY_TAB:
-				++active_input;
-
-				if (active_input > 2)
-				{
-					active_input = SESSION_SWITCH;
-				}
-				update = true;
-				break;
-			case TB_KEY_ENTER:
-				save(&desktop, &login);
-				auth(&desktop, &login, &password, &buf);
-				update = true;
-
-				if (dgn_catch())
-				{
-					++auth_fails;
-					// move focus back to password input
-					active_input = PASSWORD_INPUT;
-
-					if (dgn_output_code() != DGN_PAM)
-					{
-						buf.info_line = dgn_output_log();
-					}
-
-					if (config.blank_password)
-					{
-						input_text_clear(&password);
-					}
-
-					dgn_reset();
-				}
-				else
-				{
-					buf.info_line = lang.logout;
-				}
-
-				load(&desktop, &login);
-				system("tput cnorm");
-				break;
-			default:
-				(*input_handles[active_input])(
-					input_structs[active_input],
-					&event);
-				update = true;
-				break;
+		/* now read in standard prelude */
+		if (! noload) {
+			sfd = fopen(PRELUDE, "r");
+			if (sfd == NULL) cant_happen(20);
+			set_file(sfd);
+			start_execution();
+			fclose(sfd);
 			}
+
+		/* then set lexer up to read stdin */
+		set_file(stdin);
+		sassign(o_tab, new_str("\t"));
+
+# ifdef CURSES
+		/* finally initialize the curses window package */
+		initscr();
+# endif
+# ifdef PLOT3
+		/* initialize the plotting device */
+		openpl();
+# endif
 		}
+
+	/* announce that we're ready for action */
+	sassign(tempobj, new_sym("Little Smalltalk"));
+	primitive(SYMPRINT, 1, &tempobj);
+	obj_dec(tempobj);
+	started = 1;
+
+	/* now read in the command line files */
+	user_read(argc, argv);
+
+	start_execution();
+
+	/* print out one last newline - to move everything out of output
+	queue */
+	sassign(tempobj, new_sym("\n"));
+	primitive(SYMPRINT, 1, &tempobj);
+	obj_dec(tempobj);
+
+	/* now free things up, hopefully keeping ref counts straight */
+
+	drv_free();
+
+	flush_processes();
+
+	free_low_nums();
+
+	obj_dec((object *) Array);
+	obj_dec((object *) ArrayedCollection);
+
+	free_all_classes();
+	
+	obj_dec(o_tab);
+	obj_dec(o_drive);
+	obj_dec(o_magnitude);
+	obj_dec(o_number);
+	obj_dec(o_nil);
+	obj_dec(o_false);
+	obj_dec(o_true);
+	obj_dec(o_object);
+	obj_dec(o_empty);
+	obj_dec(o_smalltalk);
+	obj_dec(o_acollection);
+
+	if (! silence)
+		fprintf(stderr,"incs %u decs %u difference %d allocs %d\n", 
+			n_incs, n_decs, n_incs - n_decs, n_mallocs);
+	ohcount = 0;
+	for (i = 0; i < 16; i++)
+		ohcount += opcount[i];
+	fprintf(stderr,"opcount %d\n", ohcount);
+		/*fprintf(stderr,"opcode [%d] counts %d\n", i, opcount[i]);*/
+	/*fprintf(stderr,"ohcount %d\n", ohcount);
+	for (i = 0; i < 16; i++)
+		fprintf(stderr,"sp count %d %d\n", i , spcount[i]);*/
+	if (prallocs) {
+		fprintf(stderr,"blocks allocated %d\n", ca_block);
+		fprintf(stderr,"bytearrays allocated %d\n", ca_barray);
+		fprintf(stderr,"classes allocated %d\n", ca_class);
+		fprintf(stderr,"interpreters allocated %d\n", ca_terp);
+		fprintf(stderr,"ints allocated %d\n", ca_int);
+		fprintf(stderr,"floats allocated %d\n", ca_float);
+		fprintf(stderr,"strings allocated %d\n", ca_str);
+		fprintf(stderr,"symbols allocated %d\n", ca_sym);
+		fprintf(stderr,"class entryies %d\n", ca_cdict);
+		fprintf(stderr,"wallocs %d\n", ca_wal);
+		fprintf(stderr,"wtop %d\n", wtop);
+		fprintf(stderr,"byte table top %d\n", btabletop);
+		fprintf(stderr,"smalltalk objects allocated %d\n", ca_obj);
+		for (i = 0; i < 5; i++)
+			fprintf(stderr,"size %d objects %d\n", i, ca_cobj[i]);
 	}
+	clean_files();
 
-	// stop termbox
-	tb_shutdown();
+# ifdef PLOT3
+	closepl();
+# endif
+# ifdef CURSES
+	endwin();
+# endif
 
-	// free inputs
-	input_desktop_free(&desktop);
-	input_text_free(&login);
-	input_text_free(&password);
-	free_hostname();
+	exit(0);	/* say good by gracie */
+}
 
-	// unload config
-	draw_free(&buf);
-	lang_free();
+/* dofast - do a fast load of the standard prelude */
+static dofast() {
+	char buffer[100];
 
-	if (shutdown)
-	{
-		execl("/bin/sh", "sh", "-c", config.shutdown_cmd, NULL);
-	}
-    else if (reboot)
-	{
-		execl("/bin/sh", "sh", "-c", config.restart_cmd, NULL);
-	}
+	sprintf(buffer,")l %s\n", FAST);
+	dolexcommand(buffer);
+}
 
-	config_free();
+/* null_class - create a null class for bootstrapping purposes */
+static class *null_class(name)
+char *name;
+{	class *new, *new_class();
 
-	return 0;
+	new = new_class();
+	assign(new->class_name, new_sym(name));
+	enter_class(name, (object *) new);
+	return(new);
+}
+
+/* user_read - read the user command line arguments */
+static user_read(argc, argv)
+int argc;
+char **argv;
+{	int i, count;
+	char c, buffer[100];
+	char name[100];
+	FILE *fd = 0;
+
+	gettemp(name);
+	count = 0;
+	fd = fopen(name, "w");
+	if (fd == NULL)
+		cant_happen(22);
+	for (i = 1; i < argc; i++)
+		if (argv[i][0] == '-') {
+			switch(argv[i][1]) {
+				case 'a':
+					prallocs = 1; break;
+				case 'g': case 'l': case 'r':
+					c = argv[i][1];
+					sprintf(buffer,")%c %s\n", 
+						c, argv[++i]);
+					count++;
+					fputs(buffer, fd);
+					break;
+				case 'd':
+					prntcmd = argv[i][1] - '0';
+					break;
+				case 's':
+					silence = 1;
+					break;
+				}
+			}
+		else {
+			sprintf(buffer,")i %s\n", argv[i]);
+			count++;
+			fputs(buffer, fd);
+			}
+	fclose(fd);
+	if (count) {
+		fd = fopen(name, "r");
+		if (fd == NULL)
+			cant_happen(22);
+		set_file(fd);
+		}
+}
+
+/* gettemp makes a temp file name that can be deleted when finished */
+static char c = 'a';
+gettemp(buffer)
+char *buffer;
+{
+	sprintf(buffer,"%s%c", filebase, c++);
+	if (c > 'z') c = 'a';	/* wrap around forever */
+}
+
+/* clean_files - delete all temp files created */
+static clean_files()
+{
+	char buffer[100];
+
+# ifndef NOSYSTEM
+	sprintf(buffer,"rm -f %s*", filebase);
+	system(buffer);
+# endif
 }
