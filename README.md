@@ -7,7 +7,7 @@ Ce projet consiste à concevoir un robot mobile autonome, capable d'évoluer sur
 Version 0 : Pas de capteur de radioactivité embarqué – mise en œuvre des fonctionnalités de base uniquement (mouvement droit, détection et contournement d’obstacles, demi-tour).
 
 ## Objectifs
-- Avancer en ligne droite avec correction automatique de trajectoire
+- **Avancer en ligne droite avec correction automatique de trajectoire
 
 - Détecter et éviter des obstacles à l’aide d’un capteur ultrason
 
